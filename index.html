@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Custom GeoGuessr Game</title>
+    <!-- Stable OpenStreetMap Raster Tiles Engine -->
+    <link rel="stylesheet" href="https://unpkg.com" />
+    <script src="https://unpkg.com"></script>
+    <style>
+        body, html { margin: 0; padding: 0; display: flex; height: 100vh; font-family: sans-serif; background: #121212; color: #fff; overflow: hidden; }
+        #photo-side { width: 45%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; box-sizing: border-box; padding: 20px; }
+        #game-photo { max-width: 100%; max-height: 80vh; border: 3px solid #333; border-radius: 8px; }
+        #map-side { width: 55%; height: 100%; position: relative; }
+        #map { width: 100%; height: 100%; }
+        #ui-bar { position: absolute; top: 15px; left: 15px; z-index: 1000; background: rgba(0,0,0,0.85); padding: 12px 20px; border-radius: 8px; border: 1px solid #444; }
+        #lock-btn { background: #28a745; color: white; border: none; padding: 10px 20px; font-weight: bold; font-size: 15px; border-radius: 4px; cursor: pointer; margin-top: 8px; width: 100%; }
+        #lock-btn:disabled { background: #555; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+
+    <div id="photo-side">
+        <h2 id="round-txt" style="margin-bottom:10px;">Round 1</h2>
+        <img id="game-photo" src="" />
+    </div>
+
+    <div id="map-side">
+        <div id="ui-bar">
+            <div id="score-txt">Total Score: 0</div>
+            <button id="lock-btn" disabled onclick="submitGuess()">Lock In Guess</button>
+        </div>
+        <div id="map"></div>
+    </div>
+
+    <script>
+        // CONFIGURATION: Add your photos and real-world Latitude / Longitude coordinates!
+        // Right-click any spot on Google Maps in your web browser to copy these coordinates.
+        const GAME_DATA = [
+            { photo: "photo1.jpg", lat: -37.7180, lng: 145.0125, name: "The Local Cafe" },
+            { photo: "photo2.jpg", lat: -37.7210, lng: 145.0190, name: "The Park Bench" }
+        ];
+
+        let currentRound = 0;
+        let totalScore = 0;
+        let map, guessMarker, targetMarker, connectionLine;
+        let selectedLat = null, selectedLng = null;
+
+        function initGame() {
+            if (GAME_DATA.length === 0) return;
+            
+            let firstLevel = GAME_DATA[currentRound];
+            document.getElementById('game-photo').src = firstLevel.photo;
+
+            // Initialize map view centered on the first round's location
+            map = L.map('map').setView([firstLevel.lat, firstLevel.lng], 12);
+            
+            // Standard Raster Map Tiles - Runs flawlessly when hosted online
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+
+            // Listen for map click actions
+            map.on('click', function(e) {
+                selectedLat = e.latlng.lat;
+                selectedLng = e.latlng.lng;
+                
+                if (guessMarker) {
+                    guessMarker.setLatLng(e.latlng);
+                } else {
+                    guessMarker = L.marker(e.latlng).addTo(map);
+                }
+                document.getElementById('lock-btn').disabled = false;
+            });
+        }
+
+        function submitGuess() {
+            document.getElementById('lock-btn').disabled = true;
+            let currentLevel = GAME_DATA[currentRound];
+            
+            // Place a standard pin on the target answer location
+            targetMarker = L.marker([currentLevel.lat, currentLevel.lng]).addTo(map);
+
+            // Draw a dotted line connecting the guess to the actual target spot
+            connectionLine = L.polyline([[selectedLat, selectedLng], [currentLevel.lat, currentLevel.lng]], {
+                color: 'yellow', 
+                weight: 3, 
+                dashArray: '5, 5'
+            }).addTo(map);
+
+            // Distance math using Haversine formula mapping
+            let R = 6371; 
+            let dLat = (currentLevel.lat - selectedLat) * Math.PI / 180;
+            let dLng = (currentLevel.lng - selectedLng) * Math.PI / 180;
+            let a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(selectedLat * Math.PI / 180) * Math.cos(currentLevel.lat * Math.PI / 180) * Math.sin(dLng/2) * Math.sin(dLng/2);
+            let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            let distance = R * c;
+
+            // Scoring math curve capped out at 5000 points
+            let roundScore = Math.max(0, Math.round(5000 * Math.exp(-distance / 5)));
+            totalScore += roundScore;
+            document.getElementById('score-txt').innerText = "Total Score: " + totalScore;
+
+            alert("Location: " + currentLevel.name + "\nDistance Off: " + distance.toFixed(2) + " km\nPoints Earned: " + roundScore);
+
+            setTimeout(nextRound, 1500);
+        }
+
+        function nextRound() {
+            currentRound++;
+            if (currentRound < GAME_DATA.length) {
+                let nextLevel = GAME_DATA[currentRound];
+                document.getElementById('round-txt').innerText = "Round " + (currentRound + 1);
+                document.getElementById('game-photo').src = nextLevel.photo;
+                
+                // Clear out interactive markers from previous map layout
+                if (guessMarker) { map.removeLayer(guessMarker); guessMarker = null; }
+                if (targetMarker) { map.removeLayer(targetMarker); targetMarker = null; }
+                if (connectionLine) { map.removeLayer(connectionLine); connectionLine = null; }
+                
+                selectedLat = null;
+                selectedLng = null;
+                map.setView([nextLevel.lat, nextLevel.lng], 12);
+            } else {
+                alert("Game Complete! Final Score: " + totalScore + " points!");
+            }
+        }
+
+        window.onload = initGame;
+    </script>
+</body>
+</html>
